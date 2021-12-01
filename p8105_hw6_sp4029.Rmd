@@ -7,6 +7,7 @@ output: github_document
 
 ```{r setup, message=FALSE}
 library(tidyverse)
+library(modelr)
 
 knitr::opts_chunk$set(
   fig.width = 6,
@@ -24,6 +25,132 @@ scale_colour_discrete = scale_colour_viridis_d
 scale_fill_discrete = scale_fill_viridis_d
 ```
 
-### Problem 1
+## Problem 1
 
-### Problem 2
+### Data Cleaning
+
+```{r}
+baby_df <- 
+  read_csv("data/birthweight.csv") %>% 
+  mutate(babysex = as.factor(babysex),
+         frace = as.factor(frace),
+         malform = as.factor(malform),
+         mrace = as.factor(mrace))
+```
+
+There are `r sum(is.na(baby_df))` missing values.
+
+### Propose a Model
+
+Backward elimination will be used to determine an appropriate model, with 0.05 as the threshold.
+
+```{r}
+baby_lm1 <- lm(bwt ~ ., data = baby_df)
+anova(baby_lm1)
+```
+
+`momage` has the highest p-value greater than 0.05, so it will be removed.
+
+```{r}
+baby_lm2 <- lm(bwt ~ . - momage, data = baby_df)
+anova(baby_lm2)
+```
+
+`malform` has the highest p-value greater than 0.05, so it will be removed.
+
+```{r}
+baby_lm3 <- lm(bwt ~ . - momage - malform, data = baby_df)
+anova(baby_lm3)
+```
+
+`menarche` has the highest p-value greater than 0.05, so it will be removed.
+
+```{r}
+baby_lm4 <- lm(bwt ~ . - momage - malform - menarche, data = baby_df)
+anova(baby_lm4)
+```
+
+`ppwt` has the highest p-value greater than 0.05, so it will be removed.
+
+```{r}
+baby_lm5 <- lm(bwt ~ . - momage - malform - menarche - ppwt, data = baby_df)
+anova(baby_lm5)
+```
+
+`wtgain` has the highest p-value greater than 0.05, so it will be removed.
+
+```{r}
+baby_lm6 <- lm(bwt ~ . - momage - malform - menarche - ppwt - wtgain,
+               data = baby_df)
+anova(baby_lm6)
+```
+
+The remaining predictors are all significant at the 0.05 level, so they will remain in the model.
+
+The proposed model is `bwt ~ babysex + bhead + blength + delwt + fincome + frace + gaweeks + mheight + mrace + parity + ppbmi + smoken`.
+
+### Residuals vs. Fits
+
+```{r warning=FALSE}
+baby_df %>% 
+  add_predictions(baby_lm6) %>% 
+  add_residuals(baby_lm6) %>% 
+  ggplot(aes(x = pred, y = resid)) +
+  geom_point(alpha = 0.3) +
+  labs(title = "Residuals vs. Fits")
+```
+
+### Model Comparison
+
+```{r warning=FALSE}
+set.seed(21)
+cv_df <- 
+  crossv_mc(baby_df, 100) %>% 
+  mutate(
+    train = map(train, as_tibble),
+    test = map(test, as_tibble),
+    my_mod = map(train, ~lm(bwt ~ . - momage - malform - menarche - ppwt - wtgain,
+                              data = .x)),
+    mod1 = map(train, ~lm(bwt ~ blength + gaweeks,
+                          data = .x)),
+    mod2 = map(train, ~lm(bwt ~ bhead + blength + babysex + bhead*blength +
+                            bhead*babysex + blength*babysex +
+                            bhead*blength*babysex, 
+                          data = .x)),
+    rmse_my_mod = map2_dbl(my_mod, test, ~rmse(model = .x, data = .y)),
+    rmse_mod1 = map2_dbl(mod1, test, ~rmse(model = .x, data = .y)),
+    rmse_mod2 = map2_dbl(mod2, test, ~rmse(model = .x, data = .y))
+  )
+```
+
+```{r}
+cv_df %>% 
+  select(starts_with("rmse")) %>% 
+  pivot_longer(
+    everything(),
+    names_to = "model",
+    values_to = "rmse",
+    names_prefix = "rmse_"
+  ) %>% 
+  ggplot(aes(x = model, y = rmse)) +
+  geom_violin() +
+  labs(title = "RMSE for Cross-Validated Models")
+```
+
+```{r}
+cv_df %>% 
+  select(starts_with("rmse")) %>% 
+  pivot_longer(
+    everything(),
+    names_to = "model",
+    values_to = "rmse",
+    names_prefix = "rmse_"
+  ) %>% 
+  group_by(model) %>% 
+  summarize(avg_rmse = mean(rmse)) %>% 
+  knitr::kable()
+```
+
+Visually, based on the violin plot, we can see that the proposed model and model 2 have smaller RMSE than model 1. The average RMSE for the proposed model is the smallest, although model 2 comes in close second.
+
+## Problem 2
