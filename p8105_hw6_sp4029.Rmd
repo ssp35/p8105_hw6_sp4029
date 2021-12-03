@@ -159,3 +159,107 @@ cv_df %>%
 Visually, based on the violin plot, we can see that the proposed model and model 2 have smaller RMSE than model 1. The average RMSE for the proposed model is the smallest, although model 2 comes in close second.
 
 ## Problem 2
+
+### Import data
+
+```{r message=FALSE}
+weather_df <-  
+  rnoaa::meteo_pull_monitors(
+    c("USW00094728"),
+    var = c("PRCP", "TMIN", "TMAX"), 
+    date_min = "2017-01-01",
+    date_max = "2017-12-31") %>%
+  mutate(
+    name = recode(id, USW00094728 = "CentralPark_NY"),
+    tmin = tmin / 10,
+    tmax = tmax / 10) %>%
+  select(name, id, everything())
+```
+
+### Bootstrapping
+
+```{r}
+boot_models <- 
+  weather_df %>% 
+  bootstrap(5000, id = "strap_number") %>% 
+  mutate(
+    models = map(strap, ~lm(tmax ~ tmin, data = .x)),
+  )
+```
+
+
+### Estimates
+
+#### Examine R-Squared
+
+```{r}
+r_sq <- 
+  boot_models %>% 
+  mutate(results = map(models, broom::glance)) %>% 
+  select(strap_number, results) %>% 
+  unnest(results) %>% 
+  select(strap_number, r.squared)
+```
+
+Plot the distribution:
+
+```{r}
+r_sq %>% 
+  ggplot(aes(x = r.squared)) +
+  geom_density() +
+  labs(title = "Distribution of R-Squared")
+```
+
+The mean R-squared value is about `r round(mean(r_sq$r.squared), 2)`, and it ranges from `r round(min(r_sq$r.squared), 2)` to `r round(max(r_sq$r.squared), 2)`. The distribution appears to be approximately Normal.
+
+Confidence interval for R-squared:
+
+```{r}
+r_sq_conf <- 
+  r_sq %>% 
+  summarize(
+    ci_lower = quantile(r.squared, 0.025),
+    ci_upper = quantile(r.squared, 0.975)
+  )
+```
+
+We are 95% confident that the true mean R-squared value lies between `r round(r_sq_conf$ci_lower, 2)` and `r round(r_sq_conf$ci_upper, 2)`.
+
+#### Examine $\log(\hat{\beta}_0 * \hat{\beta}_1)$
+
+```{r}
+beta_hats <- 
+  boot_models %>% 
+  mutate(results = map(models, broom::tidy)) %>% 
+  select(strap_number, results) %>% 
+  unnest(results) %>% 
+  select(strap_number, term, estimate) %>% 
+  pivot_wider(names_from = term,
+              values_from = estimate) %>% 
+  rename(intercept = "(Intercept)") %>% 
+  mutate(log_beta_hats = log(intercept * tmin))
+```
+
+Plot the distribution:
+
+```{r}
+beta_hats %>% 
+  ggplot(aes(x = log_beta_hats)) +
+  geom_density() +
+  labs(title = "Distribution of log(B_hat_0*B_hat_1)")
+```
+
+The mean $\log(\hat{\beta}_0 * \hat{\beta}_1)$ value is about `r round(mean(beta_hats$log_beta_hats), 2)`, and it ranges from `r round(min(beta_hats$log_beta_hats), 2)` to `r round(max(beta_hats$log_beta_hats), 2)`. The distribution appears to be approximately Normal.
+
+Confidence interval for $\log(\hat{\beta}_0 * \hat{\beta}_1)$:
+
+```{r}
+log_betas_conf <- 
+  beta_hats %>% 
+  summarize(
+    ci_lower = quantile(log_beta_hats, 0.025),
+    ci_upper = quantile(log_beta_hats, 0.975)
+  )
+```
+
+We are 95% confident that the true mean $\log(\hat{\beta}_0 * \hat{\beta}_1)$ lies between `r round(log_betas_conf$ci_lower, 2)` and `r round(log_betas_conf$ci_upper, 2)`.
