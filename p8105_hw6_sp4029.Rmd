@@ -31,11 +31,16 @@ scale_fill_discrete = scale_fill_viridis_d
 
 ```{r}
 baby_df <- 
-  read_csv("data/birthweight.csv") %>% 
+  read_csv("data/birthweight.csv") %>%
   mutate(babysex = as.factor(babysex),
+         babysex = fct_recode(babysex, "male" = "1", "female" = "2"),
          frace = as.factor(frace),
-         malform = as.factor(malform),
-         mrace = as.factor(mrace))
+         frace = fct_recode(frace, "white" = "1", "black" = "2", "asian" = "3", 
+                       "puerto rican" = "4", "other" = "8"),
+         malform = as.logical(malform),
+         mrace = as.factor(mrace),
+         mrace = fct_recode(mrace, "white" = "1", "black" = "2", "asian" = "3", 
+                       "puerto rican" = "4"))
 ```
 
 There are `r sum(is.na(baby_df))` missing values.
